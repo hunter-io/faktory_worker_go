@@ -219,7 +219,9 @@ func process(mgr *Manager, idx int) {
 					h = mgr.middleware[i](h)
 				}
 
-				err := h(ctxFor(job), job)
+				ctx, cancel := ctxFor(job)
+				err := h(ctx, job)
+
 				mgr.with(func(c *faktory.Client) error {
 					if err != nil {
 						return c.Fail(job.Jid, err, nil)
@@ -227,6 +229,8 @@ func process(mgr *Manager, idx int) {
 						return c.Ack(job.Jid)
 					}
 				})
+
+				cancel()
 			}
 		} else {
 			// if there are no jobs, Faktory will block us on
@@ -267,12 +271,14 @@ func (c *DefaultContext) JobType() string {
 	return c.Type
 }
 
-func ctxFor(job *faktory.Job) Context {
+func ctxFor(job *faktory.Job) (Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(job.ReserveFor))
+
 	return &DefaultContext{
-		Context: context.Background(),
+		Context: ctx,
 		JID:     job.Jid,
 		Type:    job.Type,
-	}
+	}, cancel
 }
 
 func (mgr *Manager) with(fn func(fky *faktory.Client) error) error {

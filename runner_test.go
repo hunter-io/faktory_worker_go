@@ -20,7 +20,8 @@ func TestRegistration(t *testing.T) {
 func TestContext(t *testing.T) {
 	t.Parallel()
 	job := faktory.NewJob("something", 1, 2)
-	ctx := ctxFor(job)
+	ctx, cancel := ctxFor(job)
+	defer cancel()
 	assert.Equal(t, ctx.Jid(), job.Jid)
 	_, ok := ctx.Deadline()
 	assert.False(t, ok)
