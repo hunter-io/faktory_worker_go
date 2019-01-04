@@ -26,7 +26,9 @@ package faktory_worker
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"sync"
+	"time"
 )
 
 var (
@@ -34,9 +36,9 @@ var (
 	ErrClosed = errors.New("pool is closed")
 )
 
-// Closeable interface describes a closable implementation.  The underlying procedure of the Close() function is determined by its implementation  
+// Closeable interface describes a closable implementation.  The underlying procedure of the Close() function is determined by its implementation
 type Closeable interface {
-        // Close closes the object
+	// Close closes the object
 	Close() error
 }
 
@@ -162,6 +164,10 @@ func (c *channelPool) Get() (Closeable, error) {
 
 		return c.wrapConn(conn), nil
 	default:
+		// To avoid opening too many connections at once, we add a bit of random
+		// waiting time before opening the connection.
+		time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
+
 		conn, err := c.factory()
 		if err != nil {
 			return nil, err
@@ -192,6 +198,12 @@ func (c *channelPool) put(conn Closeable) error {
 	case c.conns <- conn:
 		return nil
 	default:
+		// If the pool is full, Faktory will have to open and close connections all
+		// the time. This is highly ineffective as it uses CPU cycles for Faktory
+		// and the workers as well as slows down the entire workflow. Therefore,
+		// we decided it should never happen.
+		panic("pool is full, closing passed connection: This shouldn't happen")
+
 		// pool is full, close passed connection
 		return conn.Close()
 	}
