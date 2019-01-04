@@ -234,7 +234,10 @@ func process(mgr *Manager, idx int) {
 			}
 		} else {
 			// if there are no jobs, Faktory will block us on
-			// the first queue, so no need to poll or sleep
+			// the first queue for up to 2 seconds, so no need to poll or sleep. To
+			// avoid hammering the server, we pause for 30 seconds if they are no
+			// jobs.
+			time.Sleep(time.Second * 30)
 		}
 
 		// check for shutdown
