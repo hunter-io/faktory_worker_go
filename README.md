@@ -1,5 +1,7 @@
 # faktory_worker_go
 
+![travis](https://travis-ci.org/contribsys/faktory_worker_go.svg?branch=master)
+
 This repository provides a Faktory worker process for Go apps.  This
 worker process fetches background jobs from the Faktory server and processes them.
 
@@ -48,7 +50,10 @@ func main() {
   mgr.Concurrency = 20
 
   // pull jobs from these queues, in this order of precedence
-  mgr.Queues = []string{"critical", "default", "bulk"}
+  mgr.ProcessStrictPriorityQueues("critical", "default", "bulk")
+
+  // alternatively you can use weights to avoid starvation
+  //mgr.ProcessWeightedPriorityQueues(map[string]int{"critical":3, "default":2, "bulk":1})
 
   // Start processing jobs, this method does not return
   mgr.Run()
