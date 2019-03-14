@@ -39,6 +39,10 @@ type Manager struct {
 	Pool
 	Logger Logger
 
+	// ConcurrencyLimits stores the maximum number of jobs per queue a worker
+	// should process at any time.
+	ConcurrencyLimits map[string]int
+
 	queues     []string
 	middleware []MiddlewareFunc
 	quiet      bool
@@ -48,6 +52,9 @@ type Manager struct {
 	shutdownWaiter *sync.WaitGroup
 	jobHandlers    map[string]Handler
 	eventHandlers  map[eventType][]func()
+
+	activityPerQueue map[string]int
+	activityMutex    sync.Mutex
 
 	// This only needs to be computed once. Store it here to keep things fast.
 	weightedPriorityQueuesEnabled bool
@@ -100,6 +107,10 @@ func NewManager() *Manager {
 			Quiet:    []func(){},
 			Shutdown: []func(){},
 		},
+
+		ConcurrencyLimits: make(map[string]int),
+		activityPerQueue:  make(map[string]int),
+
 		weightedPriorityQueuesEnabled: false,
 		weightedQueues:                []string{},
 	}
@@ -155,8 +166,26 @@ func (mgr *Manager) ProcessWeightedPriorityQueues(queues map[string]int) {
 func (mgr *Manager) queueList() []string {
 	if mgr.weightedPriorityQueuesEnabled {
 		sq := shuffleQueues(mgr.weightedQueues)
-		return uniqQueues(len(mgr.queues), sq)
+
+		uniqueQueues := uniqQueues(len(mgr.queues), sq)
+
+		var finalQueues []string
+
+		// If some queues have concurrency limits that have been reached, we
+		// remove those queues from the list to ensure no other jobs will be
+		// fetched.
+		mgr.activityMutex.Lock()
+		for _, queue := range uniqueQueues {
+			if mgr.ConcurrencyLimits[queue] == 0 ||
+				mgr.activityPerQueue[queue] < mgr.ConcurrencyLimits[queue] {
+				finalQueues = append(finalQueues, queue)
+			}
+		}
+		mgr.activityMutex.Unlock()
+
+		return finalQueues
 	}
+
 	return mgr.queues
 }
 
@@ -252,10 +281,19 @@ func process(mgr *Manager, idx int) {
 		if job != nil {
 			perform := mgr.jobHandlers[job.Type]
 			if perform == nil {
-				mgr.with(func(c *faktory.Client) error {
+				_ = mgr.with(func(c *faktory.Client) error {
 					return c.Fail(job.Jid, fmt.Errorf("No handler for %s", job.Type), nil)
 				})
+
 			} else {
+				// We increment the activity per queue at the beginning of the
+				// job.
+				if mgr.ConcurrencyLimits[job.Queue] > 0 {
+					mgr.activityMutex.Lock()
+					mgr.activityPerQueue[job.Queue]++
+					mgr.activityMutex.Unlock()
+				}
+
 				h := perform
 				for i := len(mgr.middleware) - 1; i >= 0; i-- {
 					h = mgr.middleware[i](h)
@@ -264,7 +302,7 @@ func process(mgr *Manager, idx int) {
 				ctx, cancel := ctxFor(job)
 				err := h(ctx, job)
 
-				mgr.with(func(c *faktory.Client) error {
+				_ = mgr.with(func(c *faktory.Client) error {
 					if err != nil {
 						return c.Fail(job.Jid, err, nil)
 					} else {
@@ -273,7 +311,15 @@ func process(mgr *Manager, idx int) {
 				})
 
 				cancel()
+
+				// We decrement the activity per queue at the end of the job.
+				if mgr.ConcurrencyLimits[job.Queue] > 0 {
+					mgr.activityMutex.Lock()
+					mgr.activityPerQueue[job.Queue]--
+					mgr.activityMutex.Unlock()
+				}
 			}
+
 		} else {
 			// if there are no jobs, Faktory will block us on
 			// the first queue for up to 2 seconds, so no need to poll or sleep. To
