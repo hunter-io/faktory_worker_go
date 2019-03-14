@@ -5,8 +5,8 @@ import (
 	"log"
 	"time"
 
-	faktory "github.com/contribsys/faktory/client"
-	worker "github.com/contribsys/faktory_worker_go"
+	faktory "github.com/hunter-io/faktory/client"
+	worker "github.com/hunter-io/faktory_worker_go"
 )
 
 func someFunc(ctx worker.Context, args ...interface{}) error {

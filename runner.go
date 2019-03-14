@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	faktory "github.com/contribsys/faktory/client"
+	faktory "github.com/hunter-io/faktory/client"
 )
 
 type eventType int
@@ -166,9 +166,7 @@ func heartbeat(mgr *Manager) {
 	for {
 		select {
 		case <-timer.C:
-			// we don't care about errors, assume any network
-			// errors will heal eventually
-			_ = mgr.with(func(c *faktory.Client) error {
+			err := mgr.with(func(c *faktory.Client) error {
 				data, err := c.Beat()
 				if err != nil || data == "" {
 					return err
@@ -186,6 +184,13 @@ func heartbeat(mgr *Manager) {
 				}
 				return nil
 			})
+
+			if err == nil {
+				mgr.Logger.Infof("Faktory heartbeat successful: %v", faktory.RandomProcessWid)
+			} else {
+				mgr.Logger.Errorf("Faktory heartbeat failed for %v: %v", faktory.RandomProcessWid, err)
+			}
+
 		case <-mgr.done:
 			timer.Stop()
 			mgr.shutdownWaiter.Done()

@@ -1,6 +1,6 @@
 # faktory_worker_go
 
-![travis](https://travis-ci.org/contribsys/faktory_worker_go.svg?branch=master)
+![travis](https://travis-ci.org/hunter-io/faktory_worker_go.svg?branch=master)
 
 This repository provides a Faktory worker process for Go apps.  This
 worker process fetches background jobs from the Faktory server and processes them.
@@ -12,11 +12,11 @@ Web UI, etc.
 
 # Installation
 
-You must install [Faktory](https://github.com/contribsys/faktory) first.
+You must install [Faktory](https://github.com/hunter-io/faktory) first.
 Then:
 
 ```
-go get -u github.com/contribsys/faktory_worker_go
+go get -u github.com/hunter-io/faktory_worker_go
 ```
 
 # Usage
@@ -31,7 +31,7 @@ To stop the process, send the TERM or INT signal.
 
 ```go
 import (
-  worker "github.com/contribsys/faktory_worker_go"
+  worker "github.com/hunter-io/faktory_worker_go"
 )
 
 func someFunc(ctx worker.Context, args ...interface{}) error {
@@ -76,7 +76,7 @@ indirection is useful for SaaSes, Heroku Addons, etc.
 
 ```go
 import (
-  faktory "github.com/contribsys/faktory/client"
+  faktory "github.com/hunter-io/faktory/client"
 )
 
 client, err := faktory.Open()
@@ -85,10 +85,10 @@ err = client.Push(job)
 ```
 
 See the Faktory client for
-[Go](https://github.com/contribsys/faktory/blob/master/client/client.go) or
-[Ruby](https://github.com/contribsys/faktory-ruby/blob/master/lib/faktory/client.rb).
+[Go](https://github.com/hunter-io/faktory/blob/master/client/client.go) or
+[Ruby](https://github.com/hunter-io/faktory-ruby/blob/master/lib/faktory/client.rb).
 You can implement a Faktory client in any programming langauge.
-See [the wiki](https://github.com/contribsys/faktory/wiki) for details.
+See [the wiki](https://github.com/hunter-io/faktory/wiki) for details.
 
 # Author
 
