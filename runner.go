@@ -190,7 +190,6 @@ func (mgr *Manager) queueList() []string {
 }
 
 func heartbeat(mgr *Manager) {
-	mgr.shutdownWaiter.Add(1)
 	timer := time.NewTicker(5 * time.Second)
 	for {
 		select {
@@ -214,16 +213,15 @@ func heartbeat(mgr *Manager) {
 				return nil
 			})
 
-			if err == nil {
+			switch err {
+			case nil:
 				mgr.Logger.Infof("Faktory heartbeat successful: %v", faktory.RandomProcessWid)
-			} else {
+			case ErrClosed:
+				mgr.Logger.Infof("Faktory client is shutting down, stopping heartbeat")
+				return
+			default:
 				mgr.Logger.Errorf("Faktory heartbeat failed for %v: %v", faktory.RandomProcessWid, err)
 			}
-
-		case <-mgr.done:
-			timer.Stop()
-			mgr.shutdownWaiter.Done()
-			return
 		}
 	}
 }
