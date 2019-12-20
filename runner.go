@@ -100,22 +100,7 @@ func (mgr *Manager) Use(middleware ...MiddlewareFunc) {
 func NewManager() *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	go func() {
-		sigchan := hookSignals()
-
-		<-sigchan
-
-		// We wait a short amount of time to ensure the manager will stop
-		// fetching new jobs before the cancel function is sent out.
-		// This is important in case one of the jobs pushes itself back in the
-		// queue as otherwise, it will risk being pulled again by the same
-		// manager.
-		time.Sleep(time.Millisecond * 200)
-
-		cancel()
-	}()
-
-	return &Manager{
+	mgr := &Manager{
 		Concurrency: 20,
 		Logger:      NewStdLogger(),
 
@@ -136,6 +121,25 @@ func NewManager() *Manager {
 		weightedQueues:                []string{},
 		context:                       ctx,
 	}
+
+	go func() {
+		sigchan := hookSignals()
+
+		<-sigchan
+
+		// We wait a short amount of time to ensure the manager will stop
+		// fetching new jobs before the cancel function is sent out.
+		// This is important in case one of the jobs pushes itself back in the
+		// queue as otherwise, it will risk being pulled again by the same
+		// manager.
+		time.Sleep(time.Millisecond * 200)
+
+		mgr.Logger.Info("Received signal, canceling context")
+
+		cancel()
+	}()
+
+	return mgr
 }
 
 // Run starts processing jobs.
