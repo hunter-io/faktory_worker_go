@@ -59,6 +59,10 @@ type Manager struct {
 	// This only needs to be computed once. Store it here to keep things fast.
 	weightedPriorityQueuesEnabled bool
 	weightedQueues                []string
+
+	// context isn't available to the caller but is managed internally to let
+	// jobs stop their work when Faktory receives a shutdown signal.
+	context context.Context
 }
 
 // Register a callback to be fired when a process lifecycle event occurs.
@@ -94,6 +98,23 @@ func (mgr *Manager) Use(middleware ...MiddlewareFunc) {
 
 // NewManager returns a new manager with default values.
 func NewManager() *Manager {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		sigchan := hookSignals()
+
+		<-sigchan
+
+		// We wait a short amount of time to ensure the manager will stop
+		// fetching new jobs before the cancel function is sent out.
+		// This is important in case one of the jobs pushes itself back in the
+		// queue as otherwise, it will risk being pulled again by the same
+		// manager.
+		time.Sleep(time.Millisecond * 200)
+
+		cancel()
+	}()
+
 	return &Manager{
 		Concurrency: 20,
 		Logger:      NewStdLogger(),
@@ -113,6 +134,7 @@ func NewManager() *Manager {
 
 		weightedPriorityQueuesEnabled: false,
 		weightedQueues:                []string{},
+		context:                       ctx,
 	}
 }
 
@@ -297,7 +319,7 @@ func process(mgr *Manager, idx int) {
 					h = mgr.middleware[i](h)
 				}
 
-				ctx, cancel := ctxFor(job)
+				ctx, cancel := ctxFor(mgr.context, job)
 				err := h(ctx, job)
 
 				_ = mgr.with(func(c *faktory.Client) error {
@@ -352,8 +374,8 @@ func (c *DefaultContext) JobType() string {
 	return c.Type
 }
 
-func ctxFor(job *faktory.Job) (Context, context.CancelFunc) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(job.ReserveFor))
+func ctxFor(ctx context.Context, job *faktory.Job) (Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(ctx, time.Second*time.Duration(job.ReserveFor))
 
 	return &DefaultContext{
 		Context: ctx,
