@@ -145,13 +145,14 @@ func NewManager() *Manager {
 // Run starts processing jobs.
 // This method does not return.
 func (mgr *Manager) Run() {
+	rand.Seed(time.Now().UnixNano())
+
 	// This will signal to Faktory that all connections from this process
 	// are worker connections.
-	rand.Seed(time.Now().UnixNano())
 	faktory.RandomProcessWid = strconv.FormatInt(rand.Int63(), 32)
 
 	if mgr.Pool == nil {
-		pool, err := NewChannelPool(0, mgr.Concurrency, func() (Closeable, error) { return faktory.Open() })
+		pool, err := NewChannelPool(mgr.Concurrency, func() (Closeable, error) { return faktory.Open() })
 		if err != nil {
 			panic(err)
 		}

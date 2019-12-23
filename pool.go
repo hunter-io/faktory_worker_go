@@ -36,7 +36,8 @@ var (
 	ErrClosed = errors.New("pool is closed")
 )
 
-// Closeable interface describes a closable implementation.  The underlying procedure of the Close() function is determined by its implementation
+// Closeable interface describes a closable implementation.  The underlying
+// procedure of the Close() function is determined by its implementation
 type Closeable interface {
 	// Close closes the object
 	Close() error
@@ -73,6 +74,10 @@ func (p *PoolConn) Close() error {
 	defer p.mu.RUnlock()
 
 	if p.unusable {
+		p.c.mu.Lock()
+		p.c.connsToOpen++
+		p.c.mu.Unlock()
+
 		if p.Closeable != nil {
 			return p.Closeable.Close()
 		}
@@ -81,7 +86,8 @@ func (p *PoolConn) Close() error {
 	return p.c.put(p.Closeable)
 }
 
-// MarkUnusable marks the connection not usable any more, to let the pool close it instead of returning it to pool.
+// MarkUnusable marks the connection not usable any more, to let the pool close
+// it instead of returning it to pool.
 func (p *PoolConn) MarkUnusable() {
 	p.mu.Lock()
 	p.unusable = true
@@ -101,6 +107,11 @@ type channelPool struct {
 	mu    sync.Mutex
 	conns chan Closeable
 
+	//connsToOpen reprents the number ot connections that can still be opened
+	// before reaching the maximum capacity.
+	connsToOpen int
+	capacity    int
+
 	// net.Conn generator
 	factory Factory
 }
@@ -114,19 +125,20 @@ type Factory func() (Closeable, error)
 // until a new Get() is called. During a Get(), If there is no new connection
 // available in the pool, a new connection will be created via the Factory()
 // method.
-func NewChannelPool(initialCap, maxCap int, factory Factory) (Pool, error) {
-	if initialCap < 0 || maxCap <= 0 || initialCap > maxCap {
+func NewChannelPool(capacity int, factory Factory) (Pool, error) {
+	if capacity <= 0 {
 		return nil, errors.New("invalid capacity settings")
 	}
 
 	c := &channelPool{
-		conns:   make(chan Closeable, maxCap),
-		factory: factory,
+		conns:    make(chan Closeable, capacity),
+		factory:  factory,
+		capacity: capacity,
 	}
 
 	// create initial connections, if something goes wrong,
 	// just close the pool error out.
-	for i := 0; i < initialCap; i++ {
+	for i := 0; i < capacity; i++ {
 		conn, err := factory()
 		if err != nil {
 			c.Close()
@@ -154,27 +166,48 @@ func (c *channelPool) Get() (Closeable, error) {
 		return nil, ErrClosed
 	}
 
-	// wrap our connections with out custom net.Conn implementation (wrapConn
-	// method) that puts the connection back to the pool if it's closed.
-	select {
-	case conn := <-conns:
-		if conn == nil {
-			return nil, ErrClosed
+	for {
+		// wrap our connections with out custom net.Conn implementation (wrapConn
+		// method) that puts the connection back to the pool if it's closed.
+		select {
+		case conn := <-conns:
+			if conn == nil {
+				c.mu.Lock()
+				c.connsToOpen--
+				c.mu.Unlock()
+
+				return nil, ErrClosed
+			}
+
+			return c.wrapConn(conn), nil
+
+		case <-time.After(1 * time.Second):
+			// We only open a new connection if we haven't reached the capacity
+			// of the queue. If we have, we wait a bit and block again for a
+			// connection.
+			c.mu.Lock()
+			if c.connsToOpen > 0 {
+				// To avoid opening too many connections at once, we add a bit of random
+				// waiting time before opening the connection.
+				time.Sleep(time.Millisecond * time.Duration(rand.Intn(100)*c.capacity))
+
+				conn, err := c.factory()
+				if err != nil {
+					c.mu.Unlock()
+					return nil, err
+				}
+
+				c.connsToOpen--
+				c.mu.Unlock()
+
+				return c.wrapConn(conn), nil
+			}
+			c.mu.Unlock()
+
+			time.Sleep(time.Second)
 		}
-
-		return c.wrapConn(conn), nil
-	default:
-		// To avoid opening too many connections at once, we add a bit of random
-		// waiting time before opening the connection.
-		time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
-
-		conn, err := c.factory()
-		if err != nil {
-			return nil, err
-		}
-
-		return c.wrapConn(conn), nil
 	}
+
 }
 
 // put puts the connection back to the pool. If the pool is full or closed,
@@ -192,21 +225,10 @@ func (c *channelPool) put(conn Closeable) error {
 		return conn.Close()
 	}
 
-	// put the resource back into the pool. If the pool is full, this will
-	// block and the default case will be executed.
-	select {
-	case c.conns <- conn:
-		return nil
-	default:
-		// If the pool is full, Faktory will have to open and close connections all
-		// the time. This is highly ineffective as it uses CPU cycles for Faktory
-		// and the workers as well as slows down the entire workflow. Therefore,
-		// we decided it should never happen.
-		panic("pool is full, closing passed connection: This shouldn't happen")
-
-		// pool is full, close passed connection
-		return conn.Close()
-	}
+	// put the resource back into the pool. If the pool is full, block until it
+	// is possible to return the connection.
+	c.conns <- conn
+	return nil
 }
 
 // Close shuts down all of the Closeable objects in the Pool

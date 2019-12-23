@@ -18,7 +18,18 @@ func someFunc(ctx worker.Context, args ...interface{}) error {
 }
 
 func main() {
+	pool, err := worker.NewChannelPool(
+		2,
+		func() (worker.Closeable, error) {
+			return faktory.Open()
+		},
+	)
+	if err != nil {
+		panic(err)
+	}
+
 	mgr := worker.NewManager()
+	mgr.Pool = pool
 	mgr.Use(func(perform worker.Handler) worker.Handler {
 		return func(ctx worker.Context, job *faktory.Job) error {
 			log.Printf("Starting work on job %s of type %s with custom %v\n", ctx.Jid(), ctx.JobType(), job.Custom)
