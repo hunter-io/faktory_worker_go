@@ -217,7 +217,7 @@ func (mgr *Manager) queueList() []string {
 }
 
 func heartbeat(mgr *Manager) {
-	timer := time.NewTicker(10 * time.Second)
+	timer := time.NewTicker(15 * time.Second)
 	for {
 		select {
 		case <-timer.C:
