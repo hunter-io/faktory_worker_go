@@ -26,7 +26,6 @@ package faktory_worker
 import (
 	"errors"
 	"fmt"
-	"math/rand"
 	"sync"
 	"time"
 )
@@ -110,7 +109,6 @@ type channelPool struct {
 	//connsToOpen reprents the number ot connections that can still be opened
 	// before reaching the maximum capacity.
 	connsToOpen int
-	capacity    int
 
 	// net.Conn generator
 	factory Factory
@@ -131,9 +129,8 @@ func NewChannelPool(capacity int, factory Factory) (Pool, error) {
 	}
 
 	c := &channelPool{
-		conns:    make(chan Closeable, capacity),
-		factory:  factory,
-		capacity: capacity,
+		conns:   make(chan Closeable, capacity),
+		factory: factory,
 	}
 
 	// create initial connections, if something goes wrong,
@@ -187,10 +184,6 @@ func (c *channelPool) Get() (Closeable, error) {
 			// connection.
 			c.mu.Lock()
 			if c.connsToOpen > 0 {
-				// To avoid opening too many connections at once, we add a bit of random
-				// waiting time before opening the connection.
-				time.Sleep(time.Millisecond * time.Duration(rand.Intn(100)*c.capacity))
-
 				conn, err := c.factory()
 				if err != nil {
 					c.mu.Unlock()
