@@ -256,7 +256,7 @@ func reportStats(c *channelPool) {
 		select {
 		case <-time.NewTicker(time.Minute).C:
 			c.mu.Lock()
-			fmt.Printf("Faktory client pool: Connections: %v, open: %v",
+			fmt.Printf("Faktory client pool: Connections: %v, to open: %v\n",
 				len(c.conns), c.connsToOpen)
 			c.mu.Unlock()
 		}
