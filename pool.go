@@ -254,7 +254,7 @@ func (c *channelPool) Len() int { return len(c.getConns()) }
 func reportStats(c *channelPool) {
 	for {
 		select {
-		case <-time.NewTicker(time.Second).C:
+		case <-time.NewTicker(time.Minute).C:
 			c.mu.Lock()
 			fmt.Printf("Faktory client pool : Connections: %v. To open: %v\n",
 				len(c.conns), c.connsToOpen)
