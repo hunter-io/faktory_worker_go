@@ -217,7 +217,10 @@ func (mgr *Manager) queueList() []string {
 }
 
 func heartbeat(mgr *Manager) {
-	timer := time.NewTicker(5 * time.Second)
+	// Wait for the first hearbeat.
+	time.Sleep(time.Second * 20)
+
+	timer := time.NewTicker(10 * time.Second)
 	for {
 		select {
 		case <-timer.C:
