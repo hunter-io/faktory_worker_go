@@ -73,9 +73,9 @@ func (p *PoolConn) Close() error {
 	defer p.mu.RUnlock()
 
 	if p.unusable {
-		p.c.mu.Lock()
+		p.mu.Lock()
 		p.c.connsToOpen++
-		p.c.mu.Unlock()
+		p.mu.Unlock()
 
 		if p.Closeable != nil {
 			return p.Closeable.Close()
@@ -184,14 +184,17 @@ func (c *channelPool) Get() (Closeable, error) {
 			// connection.
 			c.mu.Lock()
 			if c.connsToOpen > 0 {
-				conn, err := c.factory()
-				if err != nil {
-					c.mu.Unlock()
-					return nil, err
-				}
-
 				c.connsToOpen--
 				c.mu.Unlock()
+
+				conn, err := c.factory()
+				if err != nil {
+					c.mu.Lock()
+					c.connsToOpen++
+					c.mu.Unlock()
+
+					return nil, err
+				}
 
 				return c.wrapConn(conn), nil
 			}
