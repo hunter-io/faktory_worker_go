@@ -73,9 +73,9 @@ func (p *PoolConn) Close() error {
 	defer p.mu.RUnlock()
 
 	if p.unusable {
-		p.mu.Lock()
+		p.c.mu.Lock()
 		p.c.connsToOpen++
-		p.mu.Unlock()
+		p.c.mu.Unlock()
 
 		if p.Closeable != nil {
 			return p.Closeable.Close()
@@ -143,6 +143,8 @@ func NewChannelPool(capacity int, factory Factory) (Pool, error) {
 		}
 		c.conns <- conn
 	}
+
+	go reportStats(c)
 
 	return c, nil
 }
@@ -247,3 +249,16 @@ func (c *channelPool) Close() {
 
 // Len returns the number of Closeable objects in the Pool
 func (c *channelPool) Len() int { return len(c.getConns()) }
+
+// reportStats prints every minute stats regarding the pool.
+func reportStats(c *channelPool) {
+	for {
+		select {
+		case <-time.NewTicker(time.Second).C:
+			c.mu.Lock()
+			fmt.Printf("Faktory client pool : Connections: %v. To open: %v\n",
+				len(c.conns), c.connsToOpen)
+			c.mu.Unlock()
+		}
+	}
+}
