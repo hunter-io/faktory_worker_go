@@ -16,6 +16,7 @@ github.com/golang/dep v0.5.1/go.mod h1:6RZ2Wai7dSWk7qL55sDYk+8UPFqcW7all2KDBraPP
 github.com/golang/protobuf v1.3.1/go.mod h1:6lQm79b+lXiMfvg/cZm0SGofjICqVBUtrP5yJMmIC1U=
 github.com/hunter-io/faktory v0.11.0-1 h1:U3urrm45lCLDZHYuXKpg2pvUqCSIZh3Nc/ECJGU6zIs=
 github.com/hunter-io/faktory v0.11.0-1/go.mod h1:z/qMKiEsqZStxO8vnwxMUsHWATNebV0lg2p1ezcPOg0=
+github.com/hunter-io/faktory v0.13.0-1 h1:pKJd3C6MLi6NbDIac5TvrI8vF8e1VfuKMEUAu9cAc5Q=
 github.com/jmank88/nuts v0.3.0/go.mod h1:kTf5cyoLibZUQg9Lns/gteKO1d/5XrhacD1QVKviAKk=
 github.com/jteeuwen/go-bindata v3.0.7+incompatible/go.mod h1:JVvhzYOiGBnFSYRyV00iY8q7/0PThjIYav1p9h5dmKs=
 github.com/justinas/nosurf v0.0.0-20171023064657-7182011986c4/go.mod h1:Aucr5I5chr4OCuuVB4LTuHVrKHBuyRSo7vM2hqrcb7E=
