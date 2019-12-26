@@ -393,20 +393,28 @@ func ctxFor(ctx context.Context, job *faktory.Job) (Context, context.CancelFunc)
 }
 
 func (mgr *Manager) with(fn func(fky *faktory.Client) error) error {
-	conn, err := mgr.Pool.Get()
-	if err != nil {
+	err := retry(3, time.Second, func() error {
+		conn, err := mgr.Pool.Get()
+		if err != nil {
+			return err
+		}
+
+		pc := conn.(*PoolConn)
+		f, ok := pc.Closeable.(*faktory.Client)
+		if !ok {
+			return fmt.Errorf("Connection is not a Faktory client instance: %+v", conn)
+		}
+
+		err = fn(f)
+		if err != nil {
+			pc.MarkUnusable()
+		}
+
+		conn.Close()
+
 		return err
-	}
-	pc := conn.(*PoolConn)
-	f, ok := pc.Closeable.(*faktory.Client)
-	if !ok {
-		return fmt.Errorf("Connection is not a Faktory client instance: %+v", conn)
-	}
-	err = fn(f)
-	if err != nil {
-		pc.MarkUnusable()
-	}
-	conn.Close()
+	})
+
 	return err
 }
 
@@ -477,4 +485,22 @@ func uniqQueues(len int, queues []string) []string {
 
 	// Slice only what we need.
 	return queues[:len]
+}
+
+func retry(attempts int, retryDelay time.Duration, callback func() error) (err error) {
+	for i := 0; ; i++ {
+		err = callback()
+
+		if err == nil {
+			return nil
+		}
+
+		if i >= (attempts - 1) {
+			break
+		}
+
+		time.Sleep(time.Duration(retryDelay))
+	}
+
+	return err
 }
