@@ -204,12 +204,15 @@ func (mgr *Manager) queueList() []string {
 		// If some queues have concurrency limits that have been reached, we
 		// remove those queues from the list to ensure no other jobs will be
 		// fetched.
+		mgr.activityMutex.Lock()
 		for _, queue := range uniqueQueues {
 			if mgr.ConcurrencyLimits[queue] == 0 ||
 				mgr.activityPerQueue[queue] < mgr.ConcurrencyLimits[queue] {
 				finalQueues = append(finalQueues, queue)
 			}
 		}
+		mgr.activityMutex.Unlock()
+
 		return finalQueues
 	}
 
@@ -288,7 +291,6 @@ func process(mgr *Manager, idx int) {
 		var job *faktory.Job
 		var err error
 
-		mgr.activityMutex.Lock()
 		err = mgr.with(func(c *faktory.Client) error {
 			job, err = c.Fetch(mgr.queueList()...)
 			if err != nil {
@@ -299,7 +301,6 @@ func process(mgr *Manager, idx int) {
 
 		if err != nil {
 			mgr.Logger.Error(err)
-			mgr.activityMutex.Unlock()
 			time.Sleep(1 * time.Second)
 			continue
 		}
@@ -311,15 +312,16 @@ func process(mgr *Manager, idx int) {
 				_ = mgr.with(func(c *faktory.Client) error {
 					return c.Fail(job.Jid, fmt.Errorf("No handler for %s", job.Type), nil)
 				})
-				mgr.activityMutex.Unlock()
 
 			} else {
 				// We increment the activity per queue at the beginning of the
 				// job.
 				if mgr.ConcurrencyLimits[job.Queue] > 0 {
+					mgr.activityMutex.Lock()
 					mgr.activityPerQueue[job.Queue]++
+					mgr.activityMutex.Unlock()
 				}
-				mgr.activityMutex.Unlock()
+
 				h := perform
 				for i := len(mgr.middleware) - 1; i >= 0; i-- {
 					h = mgr.middleware[i](h)
@@ -351,7 +353,6 @@ func process(mgr *Manager, idx int) {
 			// the first queue for up to 2 seconds, so no need to poll or sleep. To
 			// avoid hammering the server, we pause for 30 seconds if they are no
 			// jobs.
-			mgr.activityMutex.Unlock()
 			time.Sleep(time.Second * 30)
 		}
 	}
