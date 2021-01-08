@@ -58,7 +58,7 @@ type Manager struct {
 
 	// This only needs to be computed once. Store it here to keep things fast.
 	weightedPriorityQueuesEnabled bool
-	weightedQueues                []string
+	weightedQueues                map[string]int
 
 	// context isn't available to the caller but is managed internally to let
 	// jobs stop their work when Faktory receives a shutdown signal.
@@ -118,7 +118,7 @@ func NewManager() *Manager {
 		activityPerQueue:  make(map[string]int),
 
 		weightedPriorityQueuesEnabled: false,
-		weightedQueues:                []string{},
+		weightedQueues:                make(map[string]int),
 		context:                       ctx,
 	}
 
@@ -186,18 +186,42 @@ func (mgr *Manager) ProcessStrictPriorityQueues(queues ...string) {
 
 func (mgr *Manager) ProcessWeightedPriorityQueues(queues map[string]int) {
 	uniqueQueues := queueKeys(queues)
-	weightedQueues := expandWeightedQueues(queues)
 
 	mgr.queues = uniqueQueues
-	mgr.weightedQueues = weightedQueues
+	mgr.weightedQueues = queues
 	mgr.weightedPriorityQueuesEnabled = true
 }
 
 func (mgr *Manager) queueList() []string {
 	if mgr.weightedPriorityQueuesEnabled {
-		sq := shuffleQueues(mgr.weightedQueues)
 
-		uniqueQueues := uniqQueues(len(mgr.queues), sq)
+		// A random number is generated for each weighted queue based on its
+		// priority. Queues are thenordered based on that value. This provides both
+		// a randomness but also ensures that queues with supperior priority levels
+		// are picked more often.
+		type queueScore struct {
+			name  string
+			score int
+		}
+
+		var queuesWithScore []queueScore
+
+		for name, priority := range mgr.weightedQueues {
+			queuesWithScore = append(queuesWithScore, queueScore{
+				name:  name,
+				score: rand.Intn(priority),
+			})
+		}
+
+		sort.Slice(queuesWithScore, func(i, j int) bool {
+			return queuesWithScore[i].score > queuesWithScore[j].score
+		})
+
+		var uniqueQueues []string
+
+		for _, q := range queuesWithScore {
+			uniqueQueues = append(uniqueQueues, q.name)
+		}
 
 		var finalQueues []string
 
@@ -418,29 +442,6 @@ func (mgr *Manager) with(fn func(fky *faktory.Client) error) error {
 	return err
 }
 
-// expandWeightedQueues builds a slice of queues represented the number of times equal to their weights.
-func expandWeightedQueues(queueWeights map[string]int) []string {
-	weightsTotal := 0
-	for _, queueWeight := range queueWeights {
-		weightsTotal += queueWeight
-	}
-
-	weightedQueues := make([]string, weightsTotal)
-	fillIndex := 0
-
-	for queue, nTimes := range queueWeights {
-		// Fill weightedQueues with queue n times
-		for idx := 0; idx < nTimes; idx++ {
-			weightedQueues[fillIndex] = queue
-			fillIndex++
-		}
-	}
-
-	// weightedQueues has to be stable so we can write tests
-	sort.Strings(weightedQueues)
-	return weightedQueues
-}
-
 func queueKeys(queues map[string]int) []string {
 	keys := make([]string, len(queues))
 	i := 0
@@ -451,40 +452,6 @@ func queueKeys(queues map[string]int) []string {
 	// queues has to be stable so we can write tests
 	sort.Strings(keys)
 	return keys
-}
-
-// shuffleQueues returns a copy of the slice with the elements shuffled.
-func shuffleQueues(queues []string) []string {
-	wq := make([]string, len(queues))
-	copy(wq, queues)
-
-	rand.Shuffle(len(wq), func(i, j int) {
-		wq[i], wq[j] = wq[j], wq[i]
-	})
-
-	return wq
-}
-
-// uniqQueues returns a slice of length len, of the unique elements while maintaining order.
-// The underlying array is modified to avoid allocating another one.
-func uniqQueues(len int, queues []string) []string {
-	// Record the unique values and position.
-	pos := 0
-	uniqMap := make(map[string]int)
-	for _, v := range queues {
-		if _, ok := uniqMap[v]; !ok {
-			uniqMap[v] = pos
-			pos++
-		}
-	}
-
-	// Reuse the copied array, by updating the values.
-	for queue, position := range uniqMap {
-		queues[position] = queue
-	}
-
-	// Slice only what we need.
-	return queues[:len]
 }
 
 func retry(attempts int, retryDelay time.Duration, callback func() error) (err error) {
